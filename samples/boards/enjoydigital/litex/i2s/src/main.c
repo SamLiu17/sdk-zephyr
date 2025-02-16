@@ -25,8 +25,15 @@ static const struct device *host_i2s_rx_dev;
 static const struct device *host_i2s_tx_dev;
 static struct k_mem_slab i2s_rx_mem_slab;
 static struct k_mem_slab i2s_tx_mem_slab;
-static char rx_buffers[AUDIO_FRAME_BUF_BYTES * I2S_PLAY_BUF_COUNT];
-static char tx_buffer[AUDIO_FRAME_BUF_BYTES * I2S_PLAY_BUF_COUNT];
+
+char *rx_buffers = k_malloc(AUDIO_FRAME_BUF_BYTES * I2S_PLAY_BUF_COUNT);
+char *tx_buffer = k_malloc(AUDIO_FRAME_BUF_BYTES * I2S_PLAY_BUF_COUNT);
+
+if (!rx_buffers || !tx_buffer) {
+    printk("Memory allocation failed\n");
+    return;
+}
+
 static struct i2s_config i2s_rx_cfg;
 static struct i2s_config i2s_tx_cfg;
 static int ret;
@@ -34,7 +41,8 @@ static int ret;
 static void init(void)
 {
 	/*configure rx device*/
-	host_i2s_rx_dev = device_get_binding("i2s_rx");
+	host_i2s_rx_dev = device_get_binding(DT_LABEL(DT_NODELABEL(i2s0)));
+	host_i2s_tx_dev = device_get_binding(DT_LABEL(DT_NODELABEL(i2s0)));
 	if (!host_i2s_rx_dev) {
 		printk("unable to find i2s_rx device\n");
 		exit(-1);
@@ -79,7 +87,7 @@ static void init(void)
 	ret = i2s_configure(host_i2s_tx_dev, I2S_DIR_TX, &i2s_tx_cfg);
 	if (ret != 0) {
 		printk("i2s_configure failed with %d error\n", ret);
-		exit(-1);
+		return;
 	}
 }
 
@@ -107,9 +115,17 @@ int main(void)
 
 	while (true) {
 		k_mem_slab_alloc(&i2s_tx_mem_slab, &tx_mem_block, K_NO_WAIT);
-		i2s_read(host_i2s_rx_dev, &rx_mem_block, &size);
-		memcpy(tx_mem_block, rx_mem_block, size);
-		i2s_write(host_i2s_tx_dev, tx_mem_block, size);
+		ret = i2s_read(host_i2s_rx_dev, &rx_mem_block, &size);
+		if (ret) {
+  		  printk("I2S Read failed: %d\n", ret);
+		}
+
+memcpy(tx_mem_block, rx_mem_block, size);
+
+ret = i2s_write(host_i2s_tx_dev, tx_mem_block, size);
+if (ret) {
+    printk("I2S Write failed: %d\n", ret);
+}
 		k_mem_slab_free(&i2s_rx_mem_slab, rx_mem_block);
 	}
 	return 0;
